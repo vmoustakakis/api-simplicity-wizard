@@ -1,4 +1,3 @@
-
 import React, { useState, useRef } from 'react';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,6 +8,7 @@ import RequestBody from "@/components/RequestBody";
 import ResponseViewer from "@/components/ResponseViewer";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
+import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 
 type HttpMethod = "GET" | "POST" | "PUT" | "DELETE" | "PATCH" | "OPTIONS" | "HEAD";
 
@@ -18,6 +18,13 @@ interface ApiResponse {
   headers: Record<string, string>;
   data: any;
   time: number;
+  error?: {
+    message: string;
+    stack?: string;
+    code?: string;
+    type?: string;
+    details?: any;
+  };
 }
 
 const ApiClient: React.FC = () => {
@@ -27,6 +34,7 @@ const ApiClient: React.FC = () => {
   const [loading, setLoading] = useState<boolean>(false);
   const [response, setResponse] = useState<ApiResponse | null>(null);
   const [certificate, setCertificate] = useState<File | null>(null);
+  const [errorDetails, setErrorDetails] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
 
@@ -54,6 +62,45 @@ const ApiClient: React.FC = () => {
     }
   };
 
+  const formatErrorDetails = (error: any): string => {
+    let details = "";
+    
+    if (error instanceof Error) {
+      details = `Error Type: ${error.name}\nMessage: ${error.message}`;
+      
+      if (error.stack) {
+        details += `\n\nStack Trace:\n${error.stack}`;
+      }
+      
+      if (error instanceof TypeError) {
+        details += "\n\nThis is a TypeError, which often occurs when:";
+        details += "\n- Trying to access properties of undefined or null";
+        details += "\n- Calling a non-function value";
+        details += "\n- Incompatible value types in an operation";
+      } else if (error instanceof SyntaxError) {
+        details += "\n\nThis is a SyntaxError, which typically occurs when:";
+        details += "\n- JSON parsing failed due to malformed data";
+        details += "\n- Invalid syntax in dynamic code evaluation";
+      } else if (error instanceof URIError) {
+        details += "\n\nThis is a URIError, which occurs when:";
+        details += "\n- Malformed URI components in encoding/decoding functions";
+      }
+    } else if (typeof error === 'object' && error !== null) {
+      details = "Error Object Properties:\n";
+      for (const key in error) {
+        try {
+          details += `${key}: ${JSON.stringify(error[key])}\n`;
+        } catch (e) {
+          details += `${key}: [Circular or non-serializable value]\n`;
+        }
+      }
+    } else {
+      details = `Unexpected error: ${String(error)}`;
+    }
+    
+    return details;
+  };
+
   const sendRequest = async () => {
     if (!url) {
       toast({
@@ -63,14 +110,19 @@ const ApiClient: React.FC = () => {
       });
       return;
     }
-
+    
     setLoading(true);
     setResponse(null);
+    setErrorDetails(null);
     const startTime = Date.now();
 
     try {
-      // Check if URL is valid
-      const urlObject = new URL(url);
+      let urlObject;
+      try {
+        urlObject = new URL(url);
+      } catch (e) {
+        throw new Error(`Invalid URL: ${url}. Make sure to include the protocol (http:// or https://).`);
+      }
       
       const options: RequestInit = {
         method,
@@ -79,46 +131,50 @@ const ApiClient: React.FC = () => {
         },
       };
 
-      // Add body for methods that support it
       if (method !== "GET" && method !== "HEAD" && body) {
         try {
-          // Try to parse as JSON to validate
           JSON.parse(body);
           options.body = body;
         } catch (e) {
-          toast({
-            title: "Invalid JSON",
-            description: "The request body is not valid JSON",
-            variant: "destructive",
-          });
-          setLoading(false);
-          return;
+          const parseError = e as Error;
+          throw new Error(`Invalid JSON in request body: ${parseError.message}. Please check your JSON syntax.`);
         }
       }
 
-      // Certificate handling would normally be done on the server
-      // For a frontend-only app, we can just acknowledge it
       if (certificate) {
         console.log("Certificate would be used for SSL: ", certificate.name);
-        // In a real app, this would be handled by the backend
       }
 
       const res = await fetch(url, options);
       const endTime = Date.now();
       
-      // Process headers
       const headers: Record<string, string> = {};
       res.headers.forEach((value, key) => {
         headers[key] = value;
       });
 
-      // Try to parse response as JSON, fallback to text if not possible
       let data;
+      let parseError = null;
       const contentType = res.headers.get('content-type');
-      if (contentType && contentType.includes('application/json')) {
-        data = await res.json();
-      } else {
-        data = await res.text();
+      
+      try {
+        if (contentType && contentType.includes('application/json')) {
+          data = await res.json();
+        } else {
+          data = await res.text();
+          
+          if (typeof data === 'string' && 
+              (data.trim().startsWith('{') || data.trim().startsWith('['))) {
+            try {
+              data = JSON.parse(data);
+            } catch (e) {
+              console.log("Response looks like JSON but couldn't be parsed:", e);
+            }
+          }
+        }
+      } catch (e) {
+        parseError = e as Error;
+        data = `Failed to parse response: ${parseError.message}`;
       }
 
       setResponse({
@@ -128,11 +184,47 @@ const ApiClient: React.FC = () => {
         data,
         time: endTime - startTime,
       });
+      
+      if (!res.ok) {
+        setErrorDetails(`HTTP Error ${res.status} (${res.statusText}): The server returned an error response. 
+        
+Common causes for HTTP ${res.status}:
+${res.status >= 400 && res.status < 500 ? '- Client-side error (invalid request parameters, authentication issues, etc.)' : ''}
+${res.status >= 500 ? '- Server-side error (internal errors, service unavailable, etc.)' : ''}
+${res.status === 401 ? '- Authentication required or failed' : ''}
+${res.status === 403 ? '- Insufficient permissions to access the resource' : ''}
+${res.status === 404 ? '- Resource not found at the specified endpoint' : ''}
+${res.status === 429 ? '- Rate limit exceeded (too many requests)' : ''}
+${res.status === 500 ? '- Internal server error (generic server failure)' : ''}
+${res.status === 502 ? '- Bad gateway (upstream server received an invalid response)' : ''}
+${res.status === 503 ? '- Service unavailable (server is overloaded or down for maintenance)' : ''}
+${res.status === 504 ? '- Gateway timeout (server didn\'t receive timely response from upstream server)' : ''}`);
+      }
+
     } catch (error) {
       console.error("Request error:", error);
+      
+      const errorObj = error as Error;
+      const detailedError = formatErrorDetails(errorObj);
+      setErrorDetails(detailedError);
+      
+      setResponse({
+        status: 0,
+        statusText: "Error",
+        headers: {},
+        data: errorObj.message || "Unknown error occurred",
+        time: Date.now() - startTime,
+        error: {
+          message: errorObj.message || "Unknown error occurred",
+          stack: errorObj.stack,
+          type: errorObj.name,
+          details: detailedError
+        }
+      });
+      
       toast({
         title: "Request failed",
-        description: error instanceof Error ? error.message : "Unknown error occurred",
+        description: errorObj.message || "Unknown error occurred",
         variant: "destructive",
       });
     } finally {
@@ -220,6 +312,16 @@ const ApiClient: React.FC = () => {
             <CardTitle>Response</CardTitle>
           </CardHeader>
           <CardContent>
+            {errorDetails && (
+              <Alert variant="destructive" className="mb-4">
+                <AlertTitle>Error Details</AlertTitle>
+                <AlertDescription>
+                  <div className="whitespace-pre-wrap font-mono text-xs overflow-auto max-h-[200px]">
+                    {errorDetails}
+                  </div>
+                </AlertDescription>
+              </Alert>
+            )}
             <ResponseViewer response={response} />
           </CardContent>
         </Card>

@@ -11,6 +11,13 @@ interface ResponseViewerProps {
     headers: Record<string, string>;
     data: any;
     time: number;
+    error?: {
+      message: string;
+      stack?: string;
+      code?: string;
+      type?: string;
+      details?: any;
+    };
   } | null;
 }
 
@@ -30,6 +37,7 @@ const ResponseViewer: React.FC<ResponseViewerProps> = ({ response }) => {
     if (status >= 300 && status < 400) return "bg-method-put text-white";
     if (status >= 400 && status < 500) return "bg-method-delete text-white";
     if (status >= 500) return "bg-destructive text-white";
+    if (status === 0) return "bg-destructive text-white"; // For client-side errors
     return "bg-gray-500 text-white";
   };
 
@@ -70,6 +78,7 @@ const ResponseViewer: React.FC<ResponseViewerProps> = ({ response }) => {
         <TabsList>
           <TabsTrigger value="body">Body</TabsTrigger>
           <TabsTrigger value="headers">Headers</TabsTrigger>
+          {response.error && <TabsTrigger value="error">Error</TabsTrigger>}
         </TabsList>
         
         <TabsContent value="body" className="flex-1 mt-2">
@@ -92,6 +101,47 @@ const ResponseViewer: React.FC<ResponseViewerProps> = ({ response }) => {
             </div>
           </ScrollArea>
         </TabsContent>
+
+        {response.error && (
+          <TabsContent value="error" className="flex-1 mt-2">
+            <ScrollArea className="h-[350px] w-full rounded-md border p-2">
+              <div className="space-y-3 font-mono text-xs">
+                <div>
+                  <div className="font-medium text-destructive">Message:</div>
+                  <div className="whitespace-pre-wrap">{response.error.message}</div>
+                </div>
+                
+                {response.error.type && (
+                  <div>
+                    <div className="font-medium text-destructive">Type:</div>
+                    <div>{response.error.type}</div>
+                  </div>
+                )}
+                
+                {response.error.code && (
+                  <div>
+                    <div className="font-medium text-destructive">Code:</div>
+                    <div>{response.error.code}</div>
+                  </div>
+                )}
+                
+                {response.error.stack && (
+                  <div>
+                    <div className="font-medium text-destructive">Stack Trace:</div>
+                    <div className="whitespace-pre-wrap">{response.error.stack}</div>
+                  </div>
+                )}
+                
+                {response.error.details && (
+                  <div>
+                    <div className="font-medium text-destructive">Details:</div>
+                    <div className="whitespace-pre-wrap">{response.error.details}</div>
+                  </div>
+                )}
+              </div>
+            </ScrollArea>
+          </TabsContent>
+        )}
       </Tabs>
     </div>
   );
