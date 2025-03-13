@@ -3,6 +3,7 @@ import React, { useState } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
+import { AlertCircle } from "lucide-react";
 
 interface ResponseViewerProps {
   response: {
@@ -62,6 +63,41 @@ const ResponseViewer: React.FC<ResponseViewerProps> = ({ response }) => {
   const renderedBody = formatJson(response.data);
   const isJsonResponse = typeof renderedBody === 'string' && 
     (renderedBody.startsWith('{') || renderedBody.startsWith('['));
+    
+  const getNetworkErrorHelp = (errorMessage: string) => {
+    if (errorMessage.includes('Failed to fetch')) {
+      return (
+        <div className="mt-4 p-3 bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-800 rounded-md">
+          <h4 className="text-sm font-medium flex items-center gap-1 mb-2">
+            <AlertCircle className="h-4 w-4" /> Network Connection Error
+          </h4>
+          <div className="space-y-2 text-xs">
+            <p><span className="font-medium">Description:</span> "Failed to fetch" indicates a network-level issue occurred when attempting to connect to the server.</p>
+            <p className="font-medium">Possible causes:</p>
+            <ul className="list-disc list-inside pl-2 space-y-1">
+              <li>No internet connection</li>
+              <li>Server is unreachable or down</li>
+              <li>CORS (Cross-Origin Resource Sharing) policy restriction</li>
+              <li>Invalid SSL certificate for HTTPS requests</li>
+              <li>Firewall or proxy blocking the connection</li>
+              <li>DNS resolution failure</li>
+            </ul>
+            <p className="font-medium">Troubleshooting steps:</p>
+            <ul className="list-disc list-inside pl-2 space-y-1">
+              <li>Check your internet connection</li>
+              <li>Verify the URL is correct and the server is running</li>
+              <li>Check if the API requires CORS headers or if you need to use a proxy</li>
+              <li>Verify SSL certificates if using HTTPS</li>
+              <li>Try the request in a tool like Postman or cURL to isolate browser issues</li>
+              <li>Check browser console for additional network error details</li>
+            </ul>
+          </div>
+        </div>
+      );
+    }
+    
+    return null;
+  };
 
   return (
     <div className="h-full flex flex-col">
@@ -138,6 +174,8 @@ const ResponseViewer: React.FC<ResponseViewerProps> = ({ response }) => {
                     <div className="whitespace-pre-wrap">{response.error.details}</div>
                   </div>
                 )}
+                
+                {getNetworkErrorHelp(response.error.message)}
               </div>
             </ScrollArea>
           </TabsContent>
